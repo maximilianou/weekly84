@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# ── aienv - isolated AI development environments, one container per project ────
+# Single entrypoint CLI. Commands are implemented in lib/cmd_*.sh.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# shellcheck source=lib/common.sh
+source lib/common.sh
+# shellcheck source=lib/cmd_env.sh
+source lib/cmd_env.sh
+# shellcheck source=lib/cmd_run.sh
+source lib/cmd_run.sh
+# shellcheck source=lib/cmd_mesh.sh
+source lib/cmd_mesh.sh
+
+cmd=${1:-help}
+if [[ $# -gt 0 ]]; then shift; fi
+
+case "$cmd" in
+  install) cmd_install "$@" ;;
+  create)  cmd_create "$@" ;;
+  render)  cmd_render "$@" ;;
+  start)   cmd_start "$@" ;;
+  stop)    cmd_stop "$@" ;;
+  enter)   cmd_enter "$@" ;;
+  shell)   cmd_shell "$@" ;;
+  pi)      cmd_pi "$@" ;;
+  status)  cmd_status "$@" ;;
+  monitor) cmd_monitor "$@" ;;
+  models)  cmd_models "$@" ;;
+  netbird) cmd_netbird "$@" ;;
+  update)  cmd_update "$@" ;;
+  destroy) cmd_destroy "$@" ;;
+  version) echo "aienv 2.0" ;;
+  help|-h|--help) cmd_help ;;
+  *) die "Unknown command: '$cmd'. Run 'aienv help'." ;;
+esac
