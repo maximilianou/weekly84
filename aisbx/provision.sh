@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── provision.sh - installs the aienv stack INSIDE a sandbox ──────────────────
+# __ provision.sh - installs the aienv stack INSIDE a sandbox __________________
 # Copied to /tmp by 'aienv.sh new' and executed with:
 #   sbx exec <name> bash /tmp/aienv-provision.sh
 # Environment expected (baked in by 'aienv.sh new' with sbx -e flags):

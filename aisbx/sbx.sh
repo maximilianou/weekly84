@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── sbx.sh - stable entrypoint to Docker's OFFICIAL 'sbx' CLI ─────────────────
+# __ sbx.sh - stable entrypoint to Docker's OFFICIAL 'sbx' CLI _________________
 # Regola 2 (Msg 9): the bare name 'sbx' stays reserved for Docker's binary;
 # every script WE write carries .sh. This wrapper never shadows it - it just
 # forwards to it after checking it exists, so muscle memory and docs keep one

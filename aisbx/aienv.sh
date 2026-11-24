@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── aienv.sh - one official Docker Sandbox per repository, with pi + herdr ─────
+# __ aienv.sh - one official Docker Sandbox per repository, with pi + herdr _____
 # Built on Docker's `sbx` CLI (https://docs.docker.com/ai/sandboxes/): each
 # environment is an isolated sandbox with its own VM runtime, host-side network
 # proxy and per-sandbox policy rules. Commands:
@@ -26,7 +26,7 @@ USAGE="Usage: $PROG <command>
 
 load_env  # toolkit layer; project overrides are loaded where the project is known
 
-# ── new ────────────────────────────────────────────────────────────────────────
+# __ new ________________________________________________________________________
 cmd_new() {
   local ws=${1:-${WORKSPACE:-}}
   local raw_name=${2:-}
@@ -88,7 +88,7 @@ EOF
   echo "    rules:    $PROG policy show $name"
 }
 
-# ── attach / exec / ls / stop / rm ─────────────────────────────────────────────
+# __ attach / exec / ls / stop / rm _____________________________________________
 cmd_attach() {
   [[ $# -ge 1 ]] || die "Usage: $PROG attach NAME"
   require_sandbox "$1"
@@ -117,7 +117,7 @@ cmd_ls() {
 cmd_stop() { need_sbx; [[ $# -ge 1 ]] || die "Usage: $PROG stop NAME..."; sbx stop "$@"; }
 cmd_rm()   { need_sbx; [[ $# -ge 1 ]] || die "Usage: $PROG rm NAME...";   sbx rm "$@"; }
 
-# ── policy ─────────────────────────────────────────────────────────────────────
+# __ policy _____________________________________________________________________
 # Preset (global, first setup only) + per-sandbox rules. Syntax verified against
 # https://docs.docker.com/ai/governance/local/network-rules/.
 cmd_policy_init() {   # $1 = preset (optional)
@@ -163,7 +163,7 @@ cmd_policy() {
   esac
 }
 
-# ── netbird ────────────────────────────────────────────────────────────────────
+# __ netbird ____________________________________________________________________
 cmd_netbird() {
   command -v netbird >/dev/null 2>&1 \
     || die "netbird not found on this host. The host is your ONLY mesh peer - the sandboxes stay VPN-free. Install/enroll once: https://docs.netbird.io"
@@ -175,7 +175,7 @@ cmd_netbird() {
   echo "  in etc.env, then: $PROG policy stack <name>"
 }
 
-# ── diag ───────────────────────────────────────────────────────────────────────
+# __ diag _______________________________________________________________________
 cmd_diag() {
   local fails=0 url
 
@@ -244,7 +244,7 @@ cmd_diag() {
   ok "diag: no blocking issues."
 }
 
-# ── entry ──────────────────────────────────────────────────────────────────────
+# __ entry ______________________________________________________________________
 cmd_help() { echo "$USAGE"; }
 cmd_version() { echo "aienv 1.0 (Docker Sandboxes)"; command -v sbx >/dev/null 2>&1 && sbx version | head -1; }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── lib/common.sh - shared helpers for aienv.sh ────────────────────────────────
+# __ lib/common.sh - shared helpers for aienv.sh ________________________________
 # aienv = one Docker Sandboxes (official `sbx` CLI) per repository, with pi and
 # herdr provisioned inside. Configuration follows the Msg 9 convention:
 # <project>/.env > <project>/etc.env > <toolkit>/.env > <toolkit>/etc.env.
@@ -29,7 +29,7 @@ need_sbx() {
   Full guide:               https://docs.docker.com/ai/sandboxes/install/"
 }
 
-# ── layered configuration (Msg 9) ──────────────────────────────────────────────
+# __ layered configuration (Msg 9) ______________________________________________
 # extract KEY's value from one config file; first match wins. Handles values
 # with spaces, optional single/double quotes, inline comments not allowed.
 _env_parse() {  # $1 = file, $2 = KEY -> echoes value; rc 1 when absent
