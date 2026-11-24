@@ -1,4 +1,0 @@
-# aienv toolkit - never commit secrets or machine-specific state
-config/aienv.secrets
-.image-info
-projects/
