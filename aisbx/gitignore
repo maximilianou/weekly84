@@ -1,9 +1,0 @@
-# private per-toolkit / per-project secrets - never commit
-.env
-
-# generated workspaces (GitOps lives in each workspace's own repo)
-projects/
-
-# editor / OS noise
-*.swp
-.DS_Store
