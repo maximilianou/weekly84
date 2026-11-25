@@ -68,7 +68,7 @@ ENV_FILE="$ROOT/$SBX_ENV_FILE"
 # The sandbox sources this file on every shell, so it is authoritative at
 # runtime; the env: block of sbxenv.yaml is only a fallback.
 PERSIST_KEYS=(
-  SBX_NAME
+  SBX_NAME SBX_WORKSPACE_ROOT
   AI_PROVIDER AI_OLLAMA_URL AI_OLLAMA_MODEL AI_MODEL_RUNNER_URL
   SBX_NET_NAME PGDATA_VOLUME
   POSTGRES_IMAGE POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST PG_PORT
@@ -243,6 +243,17 @@ cmd_up() {
   fi
 
   sync_env_to_sandbox
+
+  # Push the HOST-side bootstrap into the sandbox: bootstrap edits apply on
+  # the next `up` WITHOUT rebuilding the kit image (the image copy is only
+  # the first-boot fallback; Dockerfile/kit changes still need a rebuild).
+  if sbx exec "$SBX_NAME" bash -c \
+      'cat > /home/agent/bootstrap/10-devstack.sh && chmod +x /home/agent/bootstrap/10-devstack.sh' \
+      < "$ROOT/kit/devstack/files/bootstrap/10-devstack.sh" >/dev/null; then
+    echo "- synced bootstrap -> /home/agent/bootstrap/10-devstack.sh"
+  else
+    echo "[warn] could not sync the bootstrap; the image copy will be used" >&2
+  fi
 
   echo "- running in-sandbox bootstrap..."
   sbx exec "$SBX_NAME" bash /home/agent/bootstrap/10-devstack.sh

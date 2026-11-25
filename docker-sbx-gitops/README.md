@@ -51,6 +51,7 @@ HOST                                                     SANDBOX (devstack)
 | `policy/README.md` | Network-rule rationale + `sbx policy` commands |
 | `setup.sh` | One-time **host** bootstrap (sbx install check, login, Ollama, policy) |
 | `sbx.sh` | Day-2 wrapper: check/plan/up/shell/exec/logs/ports/url/ai/daemonlog/db/down/rm/new |
+| `docker-compose.yaml` | Standalone app runtime: pg-dev + adminer-dev + api + web -- the SAME workspaces/ source, no sbx needed |
 
 ## Quickstart
 
@@ -113,6 +114,49 @@ the bootstrap installs a git credential helper that reads `GITHUB_TOKEN` from
 the environment at push time (never written to a file there), sets the git
 identity, and marks the mounted workspace safe for git. `github.com` and
 `api.github.com` are already in the kit network allow-list.
+
+## Run the app WITHOUT the sandbox (docker compose)
+
+The app (`workspaces/api` + `workspaces/web`) also runs as a plain docker
+compose stack -- no sbx, no pi, no herdr; nothing to install but docker:
+
+```bash
+./sbx.sh down                                  # the sandbox uses the SAME ports
+docker compose --env-file etc.env up -d
+curl "http://localhost:$(grep '^API_PORT=' etc.env | cut -d= -f2)/api/health"
+docker compose --env-file etc.env logs -f api web
+docker compose --env-file etc.env down          # add -v to also drop the data
+```
+
+| Service | Container | URL |
+|---|---|---|
+| Postgres | `pg-dev` | `localhost:$PG_PORT` (named volume `$PGDATA_VOLUME`) |
+| Adminer | `adminer-dev` | `http://localhost:$ADMINER_PORT` (server: pg-dev) |
+| API (tsx watch) | `api-dev` | `http://localhost:$API_PORT/api/health` |
+| Web (vite, hot reload) | `web-dev` | `http://localhost:$WEB_PORT` |
+
+The SAME source files run here (bind mounts + named volumes for
+`node_modules`), live reload included: edit `workspaces/` and the containers
+pick it up. Ports and credentials come from `etc.env` via `--env-file`, with
+sane defaults when running bare `docker compose up`. Ports publish on all
+interfaces, so the stack is reachable from another machine too (e.g.
+`http://desk03.netbird.selfhosted:5173`); restrict them in
+`docker-compose.yaml` if you want loopback only.
+
+### Swapping the app stack (TypeScript today, Rust tomorrow)
+
+One template, three layers -- only the lower two change when the stack does:
+
+| Layer | Files | Changes when... |
+|---|---|---|
+| AI dev environment | `kit/`, `sbx.sh`, `sbxenv.yaml`, `setup.sh` | never (pi/herdr/ollama are app-agnostic) |
+| App source | `workspaces/api`, `workspaces/web` | the language or framework changes |
+| Standalone runtime | `docker-compose.yaml` | same, only the `api` (and optionally `web`) service |
+
+To go Rust: replace `workspaces/api` with the cargo crate and swap the `api`
+service (e.g. `image: rust:1-slim`, `command: cargo watch -x run`; keep the
+`DATABASE_URL` env). The sandbox kit, the bootstrap wiring (postgres, adminer,
+pi -> ollama) and the fine-grained GitHub flow keep working unchanged.
 
 ## GitOps workflow
 
@@ -192,6 +236,14 @@ authoritative at runtime.
   way -- `./sbx.sh check` now also tests that the four published ports are
   free. The built kit image stays cached, so a retry after a fix does NOT
   repeat the multi-minute build.
+- `cd: /home/agent/workspaces/api: No such file or directory` (bootstrap): the
+  primary workspace mount follows the sbxenv.yaml declaration and can land at
+  the HOST path mirrored inside the sandbox instead of /home/agent/workspaces.
+  The bootstrap auto-locates the real root (override var -> known paths ->
+  bounded find) and prints where it found it; `./sbx.sh logs` keeps working
+  (logs always go to `/home/agent/workspaces/logs`). To pin it by hand:
+  `SBX_WORKSPACE_ROOT=/that/path` in etc.env -- or mirror the mount at the
+  canonical path with `additionalWorkspaces` (snippet in sbxenv.yaml).
 - `npm install failed for api|web`: the bootstrap now prints the real npm
   error to the terminal (last 30 lines of `workspaces/logs/npm-<app>.log`) and
   runs a curl pre-check first that separates egress problems (policy, proxy,

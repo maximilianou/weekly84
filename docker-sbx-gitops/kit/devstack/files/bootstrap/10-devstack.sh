@@ -14,7 +14,10 @@ set -euo pipefail
 
 . /home/agent/.devstack_env   # /etc/sandbox-persistent.sh + fallbacks + exports
 
-LOGDIR="$DEVSTACK_ROOT/logs"; mkdir -p "$LOGDIR"
+# Logs live in the image dir (always writable, stable path for ./sbx.sh logs);
+# the APP root is discovered in section 6 because the workspace mount may
+# land at the host-path mirror instead of /home/agent/workspaces.
+LOGDIR="/home/agent/workspaces/logs"; mkdir -p "$LOGDIR"
 TAG="${SBX_NAME:-devstack}"
 ok()   { printf '\033[1;32m[%s]\033[0m %s\n' "$TAG" "$*"; }
 step() { printf '\033[1;36m[%s]\033[0m %s\n' "$TAG" "$*"; }
@@ -94,7 +97,43 @@ else
   step "GITHUB_TOKEN not set -- git credentials not configured"
 fi
 
-# -- 6. Workspaces: deps, env files, dev servers ------------------------------
+# -- 6. Workspaces: locate the app, deps, env files, dev servers --------------
+# sbx mounts the env file's `workspace:` following the DECLARATION; the
+# in-sandbox path can be the host-path mirror instead of /home/agent/workspaces.
+# Resolve the real app root (the dir containing api/ and web/) on every run.
+if [ ! -f "$DEVSTACK_ROOT/api/package.json" ]; then
+  step "api/ not under $DEVSTACK_ROOT -- locating the mounted workspace..."
+  for _cand in "${SBX_WORKSPACE_ROOT:-}" /home/agent/workspaces /workspace \
+               /home/agent/workspace; do
+    if [ -n "$_cand" ] && [ -f "$_cand/api/package.json" ]; then
+      DEVSTACK_ROOT="$_cand"
+      break
+    fi
+  done
+  if [ ! -f "$DEVSTACK_ROOT/api/package.json" ]; then
+    # `|| true`: find exits 1 when a start dir is missing and set -e would
+    # kill the script; an empty result is handled below.
+    _found="$(find /home /workspace /mnt /srv \
+        \( -type d -name node_modules -o -type d -name .git \) -prune -o \
+        -type f -path '*/api/package.json' -print 2>/dev/null | head -n 1 || true)"
+    if [ -n "$_found" ]; then
+      DEVSTACK_ROOT="$(dirname "$(dirname "$_found")")"
+    fi
+  fi
+fi
+if [ -f "$DEVSTACK_ROOT/api/package.json" ] && [ -f "$DEVSTACK_ROOT/web/package.json" ]; then
+  printf '%s' "$DEVSTACK_ROOT" > /home/agent/.devstack_root 2>/dev/null || true
+  ok "app workspace: $DEVSTACK_ROOT (api + web)"
+else
+  fail "cannot find the app workspaces (api/, web/) inside the sandbox.
+    Inspect:  ./sbx.sh exec 'ls -la /home/agent /workspace 2>/dev/null'
+              ./sbx.sh exec 'find /home /workspace -maxdepth 8 -name package.json -path *api*'
+    Fix: sbxenv.yaml 'workspace:' must point at the directory CONTAINING api/
+    and web/ (paths resolve from the env file's own directory), then
+    ./sbx.sh rm && ./sbx.sh up. If the mount lands elsewhere by design, pin
+    SBX_WORKSPACE_ROOT=/that/path in etc.env."
+fi
+
 write_api_env() {
   cat > "$DEVSTACK_ROOT/api/.env" <<EOF
 NODE_ENV=$NODE_ENV
@@ -108,6 +147,7 @@ write_web_env() {
   cat > "$DEVSTACK_ROOT/web/.env" <<EOF
 WEB_PORT=$WEB_PORT
 API_PORT=$API_PORT
+API_HOST=127.0.0.1
 VITE_API_BASE=$VITE_API_BASE
 EOF
 }

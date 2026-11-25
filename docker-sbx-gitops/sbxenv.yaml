@@ -35,6 +35,15 @@ agent: devstack
 # Primary workspace mounted into the sandbox (relative to this file).
 workspace: ./workspaces
 
+# OPTIONAL: mirror the same host directory at the kit's canonical in-sandbox
+# path, so kit scripts always find api/ + web/ under /home/agent/workspaces
+# even when sbx places the primary mount at the host path. The bootstrap
+# auto-locates the app anyway, so keep this commented unless you want the
+# canonical path (needs a sandbox re-create: ./sbx.sh rm && ./sbx.sh up):
+# additionalWorkspaces:
+#   - path: ./workspaces
+#     target: /home/agent/workspaces
+
 kits:
   # Local kit directory -- sbx builds it with the sandbox-kit frontend
   # (devstack.yaml + devstack.dockerfile, same basename).

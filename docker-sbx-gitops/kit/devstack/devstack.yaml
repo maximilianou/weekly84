@@ -61,8 +61,9 @@ capabilities:
       content: |
         You run inside this project's Docker Sandbox as user `agent` (the
         sandbox name follows the project, e.g. devstack or weekly85).
-        Primary workspace: /home/agent/workspaces (api = TypeScript API on
-        :4000, web = React/Vite on :5173). Services: pg-dev (Postgres, on the
+        Primary workspace: $DEVSTACK_ROOT, auto-resolved by the bootstrap
+        (api = TypeScript API on :4000, web = React/Vite on :5173; logs in
+        /home/agent/workspaces/logs). Services: pg-dev (Postgres, on the
         sandbox-internal network), adminer-dev (Adminer, :8081). Host Ollama
         is reachable at the URL in $AI_OLLAMA_URL (pi reads
         ~/.pi/agent/models.json). Read /home/agent/AGENTS.md before making

@@ -4,6 +4,15 @@
 # =============================================================================
 
 export DEVSTACK_ROOT="/home/agent/workspaces"
+# The bootstrap resolves the REAL app workspace root on every run and caches
+# it here (the primary mount can land at the host path, not this default).
+if [ -f /home/agent/.devstack_root ]; then
+  _cached_root="$(cat /home/agent/.devstack_root 2>/dev/null)"
+  if [ -n "$_cached_root" ] && [ -f "$_cached_root/api/package.json" ]; then
+    export DEVSTACK_ROOT="$_cached_root"
+  fi
+  unset _cached_root
+fi
 export PATH="$PATH:/usr/local/bin:/home/agent/.local/bin:/home/agent/bootstrap"
 
 # Runtime values synced by `./sbx.sh up` from the host's etc.env.

@@ -7,9 +7,9 @@ environment; the developer drives you from the host with `./sbx.sh`.
 
 | Path | What it is |
 |---|---|
-| `/home/agent/workspaces/api` | TypeScript API (Express + pg). Dev server: `npm run dev` (tsx watch), port `$API_PORT`. |
-| `/home/agent/workspaces/web` | React + TypeScript + Vite. Dev server: `npm run dev`, port `$WEB_PORT`, proxies `/api` -> the API. |
-| `/home/agent/workspaces/logs` | api.log / web.log / npm-*.log |
+| `$DEVSTACK_ROOT/api` | TypeScript API (Express + pg). Dev server: `npm run dev` (tsx watch), port `$API_PORT`. `$DEVSTACK_ROOT` is auto-resolved by the bootstrap (cached in `/home/agent/.devstack_root`) -- the workspace mount can land at the host path. |
+| `$DEVSTACK_ROOT/web` | React + TypeScript + Vite. Dev server: `npm run dev`, port `$WEB_PORT`, proxies `/api` -> the API. |
+| `/home/agent/workspaces/logs` | api.log / web.log / npm-*.log (image dir, always writable) |
 | `/home/agent/bootstrap/10-devstack.sh` | Idempotent bootstrap (idempotent -- safe to re-run) |
 | `/home/agent/.pi/agent/models.json` | pi provider config -> host Ollama |
 | `/etc/sandbox-persistent.sh` | Values synced from the host `etc.env` (sourced by `.devstack_env`) |
