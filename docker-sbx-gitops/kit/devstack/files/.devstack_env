@@ -1,5 +1,5 @@
 # =============================================================================
-# /home/agent/.devstack_env — sourced by EVERY bash inside the sandbox
+# /home/agent/.devstack_env -- sourced by EVERY bash inside the sandbox
 # (non-interactive via BASH_ENV, interactive via the ~/.bashrc hook).
 # =============================================================================
 
@@ -9,7 +9,7 @@ export PATH="$PATH:/usr/local/bin:/home/agent/.local/bin:/home/agent/bootstrap"
 # Runtime values synced by `./sbx.sh up` from the host's etc.env.
 [ -f /etc/sandbox-persistent.sh ] && . /etc/sandbox-persistent.sh
 
-# Fallbacks — must match etc.env / sbxenv.yaml. Any variable already
+# Fallbacks -- must match etc.env / sbxenv.yaml. Any variable already
 # present in the environment wins.
 : "${AI_PROVIDER:=ollama}"; export AI_PROVIDER
 : "${AI_OLLAMA_URL:=http://host.docker.internal:11434}"; export AI_OLLAMA_URL

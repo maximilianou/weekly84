@@ -1,11 +1,11 @@
 # =============================================================================
-# sbxenv.yaml — declarative Docker Sandbox environment (GitOps core file)
+# sbxenv.yaml -- declarative Docker Sandbox environment (GitOps core file)
 #
 # IMPORTANT: sbx resolves EVERY relative path in this file (kits, workspace,
-# mounts) from the directory CONTAINING THIS FILE — not from the directory
+# mounts) from the directory CONTAINING THIS FILE -- not from the directory
 # you run sbx in. That is why this file lives at the repo root, next to
 # ./kit/devstack and ./workspaces. (Keeping it in a subdirectory, e.g. env/,
-# makes sbx look for kit/devstack INSIDE that subdirectory — the classic
+# makes sbx look for kit/devstack INSIDE that subdirectory -- the classic
 # "error: resolve kits: kit path .../env/kit/devstack does not exist".)
 #
 # Docs: https://docs.docker.com/ai/sandboxes/configuration/environment-files/
@@ -22,7 +22,7 @@
 
 schemaVersion: "1"
 
-# Sandbox name — keep in sync with SBX_NAME in etc.env.
+# Sandbox name -- keep in sync with SBX_NAME in etc.env.
 name: devstack
 
 # The agent workload this environment attaches to. For a local kit, `agent`
@@ -33,7 +33,7 @@ agent: devstack
 workspace: ./workspaces
 
 kits:
-  # Local kit directory — sbx builds it with the sandbox-kit frontend
+  # Local kit directory -- sbx builds it with the sandbox-kit frontend
   # (devstack.yaml + devstack.dockerfile, same basename).
   - ./kit/devstack
 
@@ -61,7 +61,7 @@ env:
   WEB_PORT: "5173"
   VITE_API_BASE: /api
 
-# Host ← sandbox published ports. hostIP defaults to loopback (127.0.0.1),
+# Host <- sandbox published ports. hostIP defaults to loopback (127.0.0.1),
 # which is what you want for a dev environment. Keep in sync with
 # PG_PORT / API_PORT / WEB_PORT / ADMINER_PORT in etc.env.
 ports:

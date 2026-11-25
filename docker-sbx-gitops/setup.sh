@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ./setup.sh — one-time HOST bootstrap for the devstack Docker Sandbox
+# ./setup.sh -- one-time HOST bootstrap for the devstack Docker Sandbox
 #
 #  1. checks/installs the sbx CLI (Docker Sandboxes)
 #  2. checks sbx login (Docker OAuth)
 #  3. prepares host-local AI: Ollama reachable at OLLAMA_BIND_HOST + model pull
-#  4. allows sandbox → host AI traffic in the network policy
+#  4. allows sandbox -> host AI traffic in the network policy
 #  5. Linux only: verifies KVM (required for local sandboxes)
 #
 # Then run ./sbx.sh up to instantiate the sandbox.
@@ -17,7 +17,7 @@ cd "$ROOT"
 
 if [ ! -f "$ROOT/etc.env" ]; then
   cp "$ROOT/etc.env.example" "$ROOT/etc.env"
-  echo "• created etc.env from etc.env.example"
+  echo "- created etc.env from etc.env.example"
 fi
 # shellcheck disable=SC1091
 . "$ROOT/etc.env"
@@ -28,12 +28,12 @@ die()  { printf '\033[1;31m[setup] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
 OS="$(uname -s)"
 
-# ── 1. sbx CLI ────────────────────────────────────────────────────────────────
+# -- 1. sbx CLI ----------------------------------------------------------------
 # Docs: https://docs.docker.com/ai/sandboxes/install/
 if command -v sbx >/dev/null 2>&1; then
   ok "sbx CLI found: $(sbx version 2>/dev/null | head -n1 || echo 'version n/a')"
 else
-  warn "sbx CLI not found — install it with ONE of:"
+  warn "sbx CLI not found -- install it with ONE of:"
   case "$OS" in
     Darwin)
       echo "    brew trust docker/tap && brew install docker/tap/sbx" ;;
@@ -50,15 +50,15 @@ else
   die "install sbx, then re-run ./setup.sh"
 fi
 
-# ── 2. sbx login (required) ──────────────────────────────────────────────────
+# -- 2. sbx login (required) --------------------------------------------------
 if sbx ls >/dev/null 2>&1; then
   ok "sbx authenticated"
 else
-  warn "not signed in — run: sbx login   (opens browser for Docker OAuth)"
+  warn "not signed in -- run: sbx login   (opens browser for Docker OAuth)"
   die "run 'sbx login', then re-run ./setup.sh"
 fi
 
-# ── 3. Linux KVM check (local sandboxes need it; cloud does not) ─────────────
+# -- 3. Linux KVM check (local sandboxes need it; cloud does not) -------------
 # The module name differs by CPU vendor: kvm_amd on AMD, kvm_intel on Intel,
 # kvm on Intel/ARM as shared base. So do NOT grep for the generic 'kvm' alone
 # and do not trust grep -q silence: enumerate every kvm* module and use
@@ -73,14 +73,14 @@ if [ "$OS" = "Linux" ]; then
     echo "    sudo usermod -aG kvm \$USER   # then log out/in (or: newgrp kvm)"
     echo "  (or use cloud sandboxes, which do not need KVM)"
   else
-    warn "KVM not available — no kvm* module loaded and no /dev/kvm device"
+    warn "KVM not available -- no kvm* module loaded and no /dev/kvm device"
     echo "    Debian/Ubuntu:  sudo modprobe kvm_amd    # AMD (use kvm_intel on Intel)"
     echo "    sudo usermod -aG kvm \$USER   # then log out/in"
     echo "  (or use cloud sandboxes, which do not need KVM)"
   fi
 fi
 
-# ── 4. Host-local AI: Ollama ─────────────────────────────────────────────────
+# -- 4. Host-local AI: Ollama -------------------------------------------------
 ai_host_port="${AI_OLLAMA_URL##*:}"
 ai_host_port="${ai_host_port%%/*}"
 
@@ -90,51 +90,51 @@ if [ "$AI_PROVIDER" = "ollama" ]; then
     if curl -fsS -m 3 "http://127.0.0.1:$ai_host_port/api/tags" >/dev/null 2>&1; then
       ok "ollama is answering on 127.0.0.1:$ai_host_port"
     else
-      warn "ollama is not reachable on 127.0.0.1:$ai_host_port — start it:"
+      warn "ollama is not reachable on 127.0.0.1:$ai_host_port -- start it:"
       echo "    ollama serve   # or: sudo systemctl start ollama"
     fi
     # The sandbox reaches the host as a container; Ollama must not bind only
     # to 127.0.0.1. Documented fix (no silent systemd edits here):
     warn "make sure the daemon binds $OLLAMA_BIND_HOST so the sandbox can connect:"
-    echo "    sudo systemctl edit ollama   → add:"
+    echo "    sudo systemctl edit ollama   -> add:"
     echo "        [Service]"
     echo "        Environment=\"OLLAMA_HOST=$OLLAMA_BIND_HOST\""
     echo "    sudo systemctl restart ollama"
     if ollama list 2>/dev/null | grep -q "$AI_OLLAMA_MODEL"; then
       ok "model present: $AI_OLLAMA_MODEL"
     else
-      warn "model '$AI_OLLAMA_MODEL' not found — pulling…"
+      warn "model '$AI_OLLAMA_MODEL' not found -- pulling..."
       ollama pull "$AI_OLLAMA_MODEL" || warn "pull failed; run 'ollama pull $AI_OLLAMA_MODEL' manually"
     fi
   else
-    warn "ollama not found — install from https://ollama.com/download, then re-run"
+    warn "ollama not found -- install from https://ollama.com/download, then re-run"
   fi
 elif [ "$AI_PROVIDER" = "model-runner" ]; then
-  ok "AI_PROVIDER=model-runner — the sandbox will use $AI_MODEL_RUNNER_URL"
+  ok "AI_PROVIDER=model-runner -- the sandbox will use $AI_MODEL_RUNNER_URL"
   warn "verify the Docker Model Runner is enabled on your host"
 else
   die "AI_PROVIDER must be 'ollama' or 'model-runner' (got: $AI_PROVIDER)"
 fi
 
-# ── 5. Network policy: allow sandbox → host AI ───────────────────────────────
+# -- 5. Network policy: allow sandbox -> host AI -------------------------------
 # The kit already declares these in kit/devstack/devstack.yaml; this makes the
 # host-side policy explicit for balanced/deny-all presets.
 # Docs: https://docs.docker.com/ai/sandboxes/configuration/local/ (governance)
 if [ "$AI_PROVIDER" = "ollama" ]; then
   if sbx policy allow network "host.docker.internal:$ai_host_port" >/dev/null 2>&1; then
-    ok "policy: sandbox → host.docker.internal:$ai_host_port allowed"
+    ok "policy: sandbox -> host.docker.internal:$ai_host_port allowed"
   else
-    warn "could not set policy automatically — run manually:"
+    warn "could not set policy automatically -- run manually:"
     echo "    sbx policy allow network 'host.docker.internal:$ai_host_port'"
   fi
 fi
 if sbx policy allow network "model-runner.docker.internal" >/dev/null 2>&1; then
-  ok "policy: sandbox → model-runner.docker.internal allowed"
+  ok "policy: sandbox -> model-runner.docker.internal allowed"
 else
   warn "run manually: sbx policy allow network 'model-runner.docker.internal'"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# -- Done ---------------------------------------------------------------------
 ok "host is ready. Next:"
 echo "    ./sbx.sh plan     # review the apply plan"
 echo "    ./sbx.sh up       # create + bootstrap the sandbox (first run builds the kit)"

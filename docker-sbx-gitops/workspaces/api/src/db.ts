@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 // Connection string is composed by the kit bootstrap from etc.env values
-// (see kit/devstack/files/.devstack_env → DATABASE_URL) and written to .env.
+// (see kit/devstack/files/.devstack_env -> DATABASE_URL) and written to .env.
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -20,13 +20,13 @@ export async function initDb(retries = 5, delayMs = 3000): Promise<void> {
       return;
     } catch (err) {
       if (attempt === retries) throw err;
-      console.warn(`[db] init attempt ${attempt}/${retries} failed — retrying…`);
+      console.warn(`[db] init attempt ${attempt}/${retries} failed -- retrying...`);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 }
 
-/** Round-trip used by GET /api/health — proves api ↔ postgres connectivity. */
+/** Round-trip used by GET /api/health -- proves api <-> postgres connectivity. */
 export async function dbHealth(): Promise<{
   up: boolean;
   latencyMs: number;

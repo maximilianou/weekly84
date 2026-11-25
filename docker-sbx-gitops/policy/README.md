@@ -1,13 +1,13 @@
-# Network policy — devstack
+# Network policy -- devstack
 
 The sandbox's outbound TCP traffic is evaluated by a host-side proxy against
 your rules; UDP and ICMP are blocked by default. Two layers apply here:
 
-1. **Kit-level allow-list** — `kit/devstack/devstack.yaml`
-   (`com.docker.sandbox/network-policy@1` → `config.runtime.allow`). This ships
+1. **Kit-level allow-list** -- `kit/devstack/devstack.yaml`
+   (`com.docker.sandbox/network-policy@1` -> `config.runtime.allow`). This ships
    with the repo, so every environment created from it gets the same baseline.
    This is the GitOps layer.
-2. **Host policy** — `sbx policy` commands and the `sbx` TUI network panel.
+2. **Host policy** -- `sbx policy` commands and the `sbx` TUI network panel.
    Presets: `allow-all` / `balanced` (default, deny + baseline allowlist) /
    `deny-all` (explicit rules only). `./setup.sh` adds the host-AI rule so
    pi can reach Ollama regardless of the preset.
@@ -33,6 +33,6 @@ sbx policy allow network "myhost.example:22"    # any host:port
 ```
 
 The `sbx` TUI (run bare `sbx`) has a network panel to browse connection logs
-and allow/block hosts interactively — handy to discover what your tools need,
+and allow/block hosts interactively -- handy to discover what your tools need,
 then codify the finding into `devstack.yaml` via a pull request. That is the
-GitOps loop: observation → rule → committed config.
+GitOps loop: observation -> rule -> committed config.

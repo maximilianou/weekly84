@@ -1,5 +1,12 @@
+# syntax=docker/sandbox-kit:3
 # =============================================================================
-# kit/devstack/devstack.yaml — kit workload descriptor
+# kit/devstack/devstack.yaml -- kit workload descriptor
+#
+# THIS FIRST LINE IS MANDATORY: sbx hands this descriptor to buildkit as the
+# build definition; the directive makes buildkit dispatch to the sandbox-kit
+# frontend, which understands the YAML and loads devstack.dockerfile. Without
+# it buildkit parses this file with the default Dockerfile parser and the
+# build dies with "unknown instruction: schemaVersion:".
 #
 # Pairs with devstack.dockerfile (same basename, same directory).
 # Docs: https://docs.docker.com/ai/sandboxes/customize
@@ -18,9 +25,9 @@ capabilities:
   - type: com.docker.sandbox/sbx@1
 
   # Outbound network allow-list applied while the sandbox runs (TCP only,
-  # evaluated by the host-side proxy — UDP/ICMP stay blocked).
+  # evaluated by the host-side proxy -- UDP/ICMP stay blocked).
   # Presets: allow-all | balanced | deny-all   (see `sbx policy ls`)
-  # host.docker.internal resolves to the HOST loopback services → Ollama.
+  # host.docker.internal resolves to the HOST loopback services -> Ollama.
   - type: com.docker.sandbox/network-policy@1
     config:
       runtime:
@@ -38,7 +45,7 @@ capabilities:
           - api.github.com
           - objects.githubusercontent.com
           - raw.githubusercontent.com
-          # docker pulls FROM INSIDE the sandbox (postgres, adminer, …)
+          # docker pulls FROM INSIDE the sandbox (postgres, adminer, ...)
           - registry-1.docker.io
           - auth.docker.io
           - production.cloudflare.docker.com

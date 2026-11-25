@@ -7,8 +7,8 @@ type Health = {
 };
 type Todo = { id: number; title: string; done: boolean };
 
-// All calls go to /api — Vite proxies them to the API inside the sandbox,
-// which in turn talks to Postgres. web → api → postgres, one browser origin.
+// All calls go to /api -- Vite proxies them to the API inside the sandbox,
+// which in turn talks to Postgres. web -> api -> postgres, one browser origin.
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -52,20 +52,20 @@ export default function App() {
 
   return (
     <main style={{ fontFamily: 'system-ui', maxWidth: 560, margin: '3rem auto', padding: '0 1rem' }}>
-      <h1>devstack · web</h1>
+      <h1>devstack | web</h1>
 
       <section style={{ padding: '.75rem 1rem', border: '1px solid #ddd', borderRadius: 8 }}>
         <strong>API health</strong>
         {health ? (
           <ul>
-            <li>api: {health.status} · uptime {health.uptimeSec}s</li>
+            <li>api: {health.status} | uptime {health.uptimeSec}s</li>
             <li>
-              postgres: {health.db.up ? 'up' : 'DOWN'} · {health.db.latencyMs}ms ·{' '}
+              postgres: {health.db.up ? 'up' : 'DOWN'} | {health.db.latencyMs}ms |{' '}
               {health.db.version}
             </li>
           </ul>
         ) : (
-          <p>{error ?? 'connecting…'}</p>
+          <p>{error ?? 'connecting...'}</p>
         )}
       </section>
 

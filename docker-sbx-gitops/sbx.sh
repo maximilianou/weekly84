@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ./sbx.sh — day-2 operator for the devstack Docker Sandbox (GitOps wrapper)
+# ./sbx.sh -- day-2 operator for the devstack Docker Sandbox (GitOps wrapper)
 #
 #   ./sbx.sh check    pre-flight: verify every path/port sbx will resolve
 #   ./sbx.sh plan     show the sbx env apply plan (no changes)
@@ -24,9 +24,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-# ── Load etc.env (single source of truth) ────────────────────────────────────
+# -- Load etc.env (single source of truth) ------------------------------------
 if [ ! -f "$ROOT/etc.env" ]; then
-  echo "etc.env not found — creating it from etc.env.example (dev defaults)" >&2
+  echo "etc.env not found -- creating it from etc.env.example (dev defaults)" >&2
   cp "$ROOT/etc.env.example" "$ROOT/etc.env"
 fi
 # shellcheck disable=SC1091
@@ -34,7 +34,7 @@ fi
 
 require_sbx() {
   command -v sbx >/dev/null 2>&1 || {
-    echo "ERROR: 'sbx' not found. Install Docker Sandboxes first — see ./setup.sh" >&2
+    echo "ERROR: 'sbx' not found. Install Docker Sandboxes first -- see ./setup.sh" >&2
     exit 1
   }
 }
@@ -42,7 +42,7 @@ require_sbx() {
 ENV_FILE="$ROOT/$SBX_ENV_FILE"
 [ -f "$ENV_FILE" ] || { echo "ERROR: $ENV_FILE not found" >&2; exit 1; }
 
-# ── etc.env → sandbox persistent env (/etc/sandbox-persistent.sh) ────────────
+# -- etc.env -> sandbox persistent env (/etc/sandbox-persistent.sh) ------------
 # The sandbox sources this file on every shell, so it is authoritative at
 # runtime; the env: block of sbxenv.yaml is only a fallback.
 PERSIST_KEYS=(
@@ -66,9 +66,9 @@ sync_env_to_sandbox() {
       mv /tmp/.sbx-persistent.sh /etc/sandbox-persistent.sh 2>/dev/null \
         || sudo mv /tmp/.sbx-persistent.sh /etc/sandbox-persistent.sh' \
       < "$tmp" >/dev/null; then
-    echo "• synced etc.env → /etc/sandbox-persistent.sh"
+    echo "- synced etc.env -> /etc/sandbox-persistent.sh"
   else
-    echo "⚠ could not sync etc.env into the sandbox; the env: block of" >&2
+    echo "[warn] could not sync etc.env into the sandbox; the env: block of" >&2
     echo "  sbxenv.yaml will be used as fallback (keep both in sync)." >&2
   fi
   rm -f "$tmp"
@@ -76,7 +76,7 @@ sync_env_to_sandbox() {
 
 sandbox_exists() { sbx inspect "$SBX_NAME" >/dev/null 2>&1; }
 
-# ── Pre-flight check: prove every path/port BEFORE sbx resolves them ─────────
+# -- Pre-flight check: prove every path/port BEFORE sbx resolves them ---------
 # sbx resolves relative paths in sbxenv.yaml from the env file's OWN directory
 # (fileDir), not from the cwd. This template keeps sbxenv.yaml at the repo
 # root; `check` prints exactly what sbx will see, so failures are
@@ -84,8 +84,8 @@ sandbox_exists() { sbx inspect "$SBX_NAME" >/dev/null 2>&1; }
 do_check() {
   local fail=0
 
-  echo "• env file  : $ENV_FILE"
-  [ -f "$ENV_FILE" ] || { echo "  ✗ missing"; fail=1; }
+  echo "- env file  : $ENV_FILE"
+  [ -f "$ENV_FILE" ] || { echo "  [FAIL] missing"; fail=1; }
 
   # Kit entries (relative paths like ./kit/devstack)
   local kit_rel kit_dir kit_name
@@ -93,17 +93,37 @@ do_check() {
                      | sed -E 's/^[[:space:]]*-[[:space:]]+//; s/"//g'); do
     kit_dir="$ROOT/$kit_rel"
     kit_name="$(basename "$kit_rel")"
-    echo "• kit       : $kit_dir"
+    echo "- kit       : $kit_dir"
     if [ ! -d "$kit_dir" ]; then
-      echo "  ✗ directory missing — sbx would fail with 'kit path ... does not exist'"
+      echo "  [FAIL] directory missing -- sbx would fail with 'kit path ... does not exist'"
       fail=1
       continue
     fi
     for _ext in yaml dockerfile; do
-      if [ -f "$kit_dir/$kit_name.$_ext" ]; then
-        echo "  ✓ $kit_name.$_ext"
+      if [ ! -f "$kit_dir/$kit_name.$_ext" ]; then
+        echo "  [FAIL] $kit_name.$_ext missing"; fail=1
+        continue
+      fi
+      # Two rules proven by sbx 0.54: the DESCRIPTOR yaml is the build
+      # definition and must START with the frontend directive, else buildkit
+      # parses it with the default Dockerfile parser ("unknown instruction:
+      # schemaVersion:"). The companion RECIPE must be an ORDINARY Dockerfile
+      # with no directive at all ("content recipe ... names the kit frontend
+      # in its syntax directive" otherwise).
+      if [ "$_ext" = "yaml" ]; then
+        if [ "$(head -n1 "$kit_dir/$kit_name.yaml")" = "# syntax=docker/sandbox-kit:3" ]; then
+          echo "  [ok] $kit_name.yaml (frontend directive on line 1)"
+        else
+          echo "  [FAIL] $kit_name.yaml must START with '# syntax=docker/sandbox-kit:3'"
+          fail=1
+        fi
       else
-        echo "  ✗ $kit_name.$_ext missing"; fail=1
+        if grep -q '^# syntax=' "$kit_dir/$kit_name.dockerfile"; then
+          echo "  [FAIL] $kit_name.dockerfile must be an ORDINARY Dockerfile - remove its '# syntax=' line (directive belongs only in $kit_name.yaml)"
+          fail=1
+        else
+          echo "  [ok] $kit_name.dockerfile (ordinary recipe, no syntax directive)"
+        fi
       fi
     done
   done
@@ -112,36 +132,36 @@ do_check() {
   local ws_rel
   ws_rel="$(grep -E '^workspace:' "$ENV_FILE" 2>/dev/null | awk '{print $2}' | tr -d '"')"
   if [ -n "$ws_rel" ]; then
-    echo "• workspace : $ROOT/$ws_rel"
+    echo "- workspace : $ROOT/$ws_rel"
     if [ ! -d "$ROOT/$ws_rel" ]; then
-      echo "  ✗ directory missing"; fail=1
+      echo "  [FAIL] directory missing"; fail=1
     else
-      [ -d "$ROOT/$ws_rel/api" ] && echo "  ✓ workspaces/api" || { echo "  ✗ workspaces/api missing"; fail=1; }
-      [ -d "$ROOT/$ws_rel/web" ] && echo "  ✓ workspaces/web" || { echo "  ✗ workspaces/web missing"; fail=1; }
+      [ -d "$ROOT/$ws_rel/api" ] && echo "  [ok] workspaces/api" || { echo "  [FAIL] workspaces/api missing"; fail=1; }
+      [ -d "$ROOT/$ws_rel/web" ] && echo "  [ok] workspaces/web" || { echo "  [FAIL] workspaces/web missing"; fail=1; }
     fi
   fi
 
-  # Cross-file consistency: sandbox name + published ports (etc.env ↔ sbxenv.yaml)
+  # Cross-file consistency: sandbox name + published ports (etc.env <-> sbxenv.yaml)
   if grep -qE "^name:[[:space:]]*$SBX_NAME[[:space:]]*$" "$ENV_FILE"; then
-    echo "• name      : '$SBX_NAME' matches sbxenv.yaml"
+    echo "- name      : '$SBX_NAME' matches sbxenv.yaml"
   else
-    echo "  ✗ sbxenv.yaml 'name:' differs from SBX_NAME=$SBX_NAME"; fail=1
+    echo "  [FAIL] sbxenv.yaml 'name:' differs from SBX_NAME=$SBX_NAME"; fail=1
   fi
   local p
   for p in "$PG_PORT" "$API_PORT" "$WEB_PORT" "$ADMINER_PORT"; do
     if grep -qE "^[[:space:]]*-[[:space:]]*sandbox:[[:space:]]*$p[[:space:]]*$" "$ENV_FILE" \
        && grep -qE "^[[:space:]]*host:[[:space:]]*$p[[:space:]]*$" "$ENV_FILE"; then
-      echo "• port      : $p declared (sandbox → host)"
+      echo "- port      : $p declared (sandbox -> host)"
     else
-      echo "  ✗ port $p not declared for BOTH sandbox and host in sbxenv.yaml"; fail=1
+      echo "  [FAIL] port $p not declared for BOTH sandbox and host in sbxenv.yaml"; fail=1
     fi
   done
 
   if [ "$fail" -ne 0 ]; then
-    echo "✗ check FAILED — fix the items marked ✗, then re-run" >&2
+    echo "[FAIL] check FAILED -- fix the items marked [FAIL], then re-run" >&2
     return 1
   fi
-  echo "✓ check OK — every path and port resolves the way sbx will resolve it"
+  echo "[ok] check OK -- every path and port resolves the way sbx will resolve it"
 }
 
 cmd_plan() {
@@ -157,21 +177,24 @@ cmd_up() {
   echo
 
   if sandbox_exists; then
-    echo "• sandbox '$SBX_NAME' already exists (sbx ls / sbx attach if stopped)"
+    echo "- sandbox '$SBX_NAME' already exists (sbx ls / sbx attach if stopped)"
   else
-    echo "• creating sandbox from $ENV_FILE (first run builds the kit image)…"
+    echo "- creating sandbox from $ENV_FILE (first run builds the kit image)..."
     if ! sbx env create "$ENV_FILE" --name "$SBX_NAME"; then
-      echo "✗ sbx env create failed — the sbx error above names the exact resource" >&2
-      echo "  it could not resolve. Remember: sbx resolves relative paths in" >&2
-      echo "  sbxenv.yaml from the env file's OWN directory, not the repo root." >&2
-      echo "  './sbx.sh check' prints every resolved path for comparison." >&2
+      echo "[FAIL] sbx env create failed - the two most common causes:" >&2
+      echo "  1. kit recipe error -> <name>.yaml must START with" >&2
+      echo "     '# syntax=docker/sandbox-kit:3' AND <name>.dockerfile must be an" >&2
+      echo "     ordinary Dockerfile with NO '# syntax=' line ('./sbx.sh check'" >&2
+      echo "     verifies both);" >&2
+      echo "  2. path resolution -> sbx resolves relative paths in sbxenv.yaml" >&2
+      echo "     from the env file's OWN directory ('./sbx.sh check' prints them)." >&2
       exit 1
     fi
   fi
 
   sync_env_to_sandbox
 
-  echo "• running in-sandbox bootstrap…"
+  echo "- running in-sandbox bootstrap..."
   sbx exec "$SBX_NAME" bash /home/agent/bootstrap/10-devstack.sh
 
   echo
@@ -197,7 +220,7 @@ cmd_status() {
   require_sbx
   sbx ls
   echo
-  sandbox_exists && sbx inspect "$SBX_NAME" || echo "sandbox '$SBX_NAME' does not exist yet — run './sbx.sh up'"
+  sandbox_exists && sbx inspect "$SBX_NAME" || echo "sandbox '$SBX_NAME' does not exist yet -- run './sbx.sh up'"
 }
 
 cmd_ports() {
@@ -218,25 +241,25 @@ cmd_logs() {
 
 cmd_url() {
   cat <<EOF
-devstack URLs (host side — published by sbxenv.yaml ports:)
+devstack URLs (host side -- published by sbxenv.yaml ports:)
   web      : http://localhost:$WEB_PORT
   api      : http://localhost:$API_PORT/api/health
   adminer  : http://localhost:$ADMINER_PORT  (server: $POSTGRES_HOST, user: $POSTGRES_USER)
-  postgres : localhost:$PG_PORT ($POSTGRES_USER/$POSTGRES_PASSWORD → $POSTGRES_DB)
+  postgres : localhost:$PG_PORT ($POSTGRES_USER/$POSTGRES_PASSWORD -> $POSTGRES_DB)
 EOF
 }
 
 cmd_ai() {
   require_sbx
-  echo "• from HOST → $AI_OLLAMA_URL"
+  echo "- from HOST -> $AI_OLLAMA_URL"
   curl -fsS -m 5 "$AI_OLLAMA_URL/api/tags" | head -c 400 || {
-    echo "⚠ host cannot reach Ollama at $AI_OLLAMA_URL" >&2
+    echo "[warn] host cannot reach Ollama at $AI_OLLAMA_URL" >&2
     echo "  (is ollama running? is it bound to $OLLAMA_BIND_HOST? see ./setup.sh)" >&2
   } || true
   echo
-  echo "• from SANDBOX → $AI_OLLAMA_URL (network policy must allow it)"
+  echo "- from SANDBOX -> $AI_OLLAMA_URL (network policy must allow it)"
   sbx exec "$SBX_NAME" bash -c "curl -fsS -m 5 '$AI_OLLAMA_URL/api/tags' | head -c 400" || {
-    echo "⚠ sandbox cannot reach the host AI endpoint — check:" >&2
+    echo "[warn] sandbox cannot reach the host AI endpoint -- check:" >&2
     echo "    sbx policy allow network 'host.docker.internal:11434'" >&2
     echo "  and the allow list in kit/devstack/devstack.yaml" >&2
   } || true
@@ -257,7 +280,7 @@ cmd_down() {
 cmd_rm() {
   require_sbx
   sbx env rm "$ENV_FILE" --name "$SBX_NAME" "$@"
-  echo "note: the Postgres volume '$PGDATA_VOLUME' survives — wipe it with:"
+  echo "note: the Postgres volume '$PGDATA_VOLUME' survives -- wipe it with:"
   echo "  ./sbx.sh up && ./sbx.sh exec docker volume rm $PGDATA_VOLUME"
 }
 
@@ -267,7 +290,7 @@ cmd_reset() {
 
 usage() {
   cat <<'EOF'
-./sbx.sh — day-2 operator for the devstack Docker Sandbox (GitOps wrapper)
+./sbx.sh -- day-2 operator for the devstack Docker Sandbox (GitOps wrapper)
 
   ./sbx.sh check    pre-flight: verify every path/port sbx will resolve
   ./sbx.sh plan     show the sbx env apply plan (no changes)
