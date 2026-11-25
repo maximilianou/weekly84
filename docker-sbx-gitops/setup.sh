@@ -6,7 +6,8 @@
 #  2. checks sbx login (Docker OAuth)
 #  3. prepares host-local AI: Ollama reachable at OLLAMA_BIND_HOST + model pull
 #  4. allows sandbox -> host AI traffic in the network policy
-#  5. Linux only: verifies KVM (required for local sandboxes)
+#  5. Linux only: verifies KVM + loop/erofs prerequisites for local sandboxes
+#  6. verifies the GitHub fine-grained token (repo scope + push permission)
 #
 # Then run ./sbx.sh up to instantiate the sandbox.
 # =============================================================================
@@ -80,6 +81,84 @@ if [ "$OS" = "Linux" ]; then
   fi
 fi
 
+# -- 3b. Linux container-runtime prerequisites --------------------------------
+# sbx prepares each sandbox rootfs with mkfs.erofs and loop-mounts it via its
+# embedded containerd (see docker/sbx-releases issue 444). A failure here
+# surfaces AFTER "image ready" as the generic "failed to run sandbox
+# container", so verify the four known causes before the first build.
+if [ "$OS" = "Linux" ]; then
+  if [ -e /dev/loop-control ]; then
+    if [ -r /dev/loop-control ] && [ -w /dev/loop-control ]; then
+      ok "loop control accessible (/dev/loop-control readable/writable)"
+    else
+      warn "/dev/loop-control not accessible by you -> the run fails with"
+      echo "    'failed to run sandbox container'. Fix (then log out/in):"
+      echo "    sudo usermod -aG disk \$USER   # loop devices need the 'disk' group"
+    fi
+  else
+    warn "/dev/loop-control missing -- is the 'loop' module loaded?"
+    echo "    sudo modprobe loop"
+  fi
+  if command -v mkfs.erofs >/dev/null 2>&1; then
+    if mkfs.erofs --help 2>&1 | grep -q -- --tar; then
+      ok "mkfs.erofs found (supports --tar; sbx needs erofs-utils >= 1.8)"
+    else
+      warn "mkfs.erofs present but --tar unsupported (sbx needs erofs-utils >= 1.8)"
+      echo "    check: mkfs.erofs --help | grep -- --tar ; then upgrade erofs-utils"
+    fi
+  else
+    warn "mkfs.erofs not found -> sudo apt install erofs-utils"
+  fi
+  if grep -qw erofs /proc/filesystems || [ -d /sys/fs/erofs ]; then
+    ok "kernel supports erofs"
+  else
+    warn "erofs filesystem not available -> sudo modprobe erofs"
+  fi
+  case ":$PATH:" in
+    *:/usr/sbin:*) ok "PATH contains /usr/sbin (mkfs.erofs, losetup, mount)" ;;
+    *) warn "/usr/sbin not in PATH -- the sbx daemon looks up its tools there:"
+       echo '    export PATH="$PATH:/usr/sbin"   # then: sbx daemon restart' ;;
+  esac
+fi
+
+# -- 3c. GitHub fine-grained token (optional; per-project repo) ----------------
+# The sandbox pushes ONLY <owner>/<repo> (default repo = project name) with a
+# fine-grained PAT scoped to "Only select repositories". Verified here WITHOUT
+# ever printing the token: repo reachable, push permission granted, and the
+# token is not scoped to a pile of other repos.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  _gh_owner="${GITHUB_OWNER:-}"
+  _gh_repo="${GITHUB_REPO:-$SBX_NAME}"
+  if [ -z "$_gh_owner" ]; then
+    warn "GITHUB_TOKEN set but GITHUB_OWNER is empty -> set GITHUB_OWNER=<your github user>"
+  else
+    _gh_json="$(curl -sS -m 15 -H "Authorization: Bearer $GITHUB_TOKEN" \
+      "https://api.github.com/repos/$_gh_owner/$_gh_repo" 2>/dev/null || echo '{}')"
+    if printf '%s' "$_gh_json" | grep -q '"full_name"'; then
+      if printf '%s' "$_gh_json" | grep -q '"push":true'; then
+        ok "GitHub token: push access to $_gh_owner/$_gh_repo"
+      else
+        warn "GitHub token reaches $_gh_owner/$_gh_repo but WITHOUT push ->"
+        echo "    grant 'Contents: Read and write' on the fine-grained token"
+      fi
+      _gh_n="$(curl -sS -m 15 -H "Authorization: Bearer $GITHUB_TOKEN" \
+        'https://api.github.com/user/repos?per_page=100&visibility=all' 2>/dev/null \
+        | grep -o '"full_name"' | wc -l | tr -d ' ')"
+      case "${_gh_n:-0}" in
+        0) warn "GitHub token lists 0 accessible repos (check its scope)" ;;
+        1) ok "GitHub token is scoped to exactly one repo" ;;
+        *) warn "GitHub token grants access to $_gh_n repos -> narrow it to"
+           echo "    'Only select repositories: $_gh_owner/$_gh_repo' at"
+           echo "    https://github.com/settings/personal-access-tokens" ;;
+      esac
+    else
+      warn "GitHub token does NOT reach $_gh_owner/$_gh_repo ->"
+      echo "    create a fine-grained token with 'Only select repositories:"
+      echo "    $_gh_owner/$_gh_repo' and 'Contents: Read and write'"
+    fi
+  fi
+fi
+
 # -- 4. Host-local AI: Ollama -------------------------------------------------
 ai_host_port="${AI_OLLAMA_URL##*:}"
 ai_host_port="${ai_host_port%%/*}"
@@ -126,6 +205,17 @@ if [ "$AI_PROVIDER" = "ollama" ]; then
   else
     warn "could not set policy automatically -- run manually:"
     echo "    sbx policy allow network 'host.docker.internal:$ai_host_port'"
+  fi
+  # AI endpoint by DNS hostname (Ollama on another machine, e.g. over Netbird:
+  # http://emilia.netbird.selfhosted:11434) needs its own policy entry.
+  _ai_host="${AI_OLLAMA_URL#*://}"; _ai_host="${_ai_host%%/*}"
+  _ai_host="${_ai_host%%:*}"
+  if [ -n "$_ai_host" ] && [ "$_ai_host" != "host.docker.internal" ]; then
+    if sbx policy allow network "$_ai_host:$ai_host_port" >/dev/null 2>&1; then
+      ok "policy: sandbox -> $_ai_host:$ai_host_port allowed"
+    else
+      warn "run manually: sbx policy allow network '$_ai_host:$ai_host_port'"
+    fi
   fi
 fi
 if sbx policy allow network "model-runner.docker.internal" >/dev/null 2>&1; then

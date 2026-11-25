@@ -25,9 +25,12 @@ RUN apt-get update \
       ca-certificates curl gnupg jq postgresql-client procps \
  && rm -rf /var/lib/apt/lists/*
 
-# Node 22 -- pi requires Node >= 22.19.
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Node 26 "Lithium" -- Active LTS since 2026-10-28; pi requires Node >= 22.19.
+# npm is upgraded to the latest release. If a tool misbehaves on 26, pin this
+# back to setup_24.x (also LTS).
+RUN curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g npm@latest \
  && rm -rf /var/lib/apt/lists/*
 
 # pi.dev coding agent + openspec (spec-driven development CLI) -- global, root

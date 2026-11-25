@@ -3,7 +3,7 @@
 # /home/agent/bootstrap/10-devstack.sh -- idempotent in-sandbox bootstrap.
 #
 # Wires every component together:
-#   pg-dev -- devnet -- adminer-dev
+#   pg-dev -- $SBX_NET_NAME -- adminer-dev
 #     ^                            (containers inside the sandbox)
 #     +-- 127.0.0.1:$PG_PORT -- api (node/tsx, :$API_PORT) -- web (vite, :$WEB_PORT)
 #   pi -> host Ollama ($AI_OLLAMA_URL)
@@ -15,9 +15,10 @@ set -euo pipefail
 . /home/agent/.devstack_env   # /etc/sandbox-persistent.sh + fallbacks + exports
 
 LOGDIR="$DEVSTACK_ROOT/logs"; mkdir -p "$LOGDIR"
-ok()   { printf '\033[1;32m[devstack]\033[0m %s\n' "$*"; }
-step() { printf '\033[1;36m[devstack]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[devstack] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
+TAG="${SBX_NAME:-devstack}"
+ok()   { printf '\033[1;32m[%s]\033[0m %s\n' "$TAG" "$*"; }
+step() { printf '\033[1;36m[%s]\033[0m %s\n' "$TAG" "$*"; }
+fail() { printf '\033[1;31m[%s] FAIL:\033[0m %s\n' "$TAG" "$*" >&2; exit 1; }
 
 running() { docker ps --format '{{.Names}}' | grep -qx "$1"; }
 
@@ -73,6 +74,26 @@ sed -e "s|__AI_BASE_URL__|$_base_url|g" \
     /home/agent/pi-models.template.json > /home/agent/.pi/agent/models.json
 ok "pi -> $_base_url (model: $AI_OLLAMA_MODEL)"
 
+# -- 5b. git identity + fine-grained GitHub credentials ------------------------
+# GITHUB_TOKEN is a fine-grained PAT scoped to ONLY $GITHUB_OWNER/$GITHUB_REPO
+# (scope and push permission verified by ./setup.sh). The credential helper
+# reads the token from the environment at push time -- this script never
+# writes the token to disk.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  step "configuring git for $GITHUB_OWNER/$GITHUB_REPO..."
+  git config --global user.name  "$GIT_USER_NAME"
+  git config --global user.email "$GIT_USER_EMAIL"
+  git config --global init.defaultBranch main
+  git config --global credential.helper \
+    '!f() { printf "username=oauth2\npassword=%s\n" "$GITHUB_TOKEN"; }; f'
+  git config --global --add safe.directory "$DEVSTACK_ROOT"
+  git config --global --add safe.directory "$DEVSTACK_ROOT/api"
+  git config --global --add safe.directory "$DEVSTACK_ROOT/web"
+  ok "git ready -- pushes go to https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
+else
+  step "GITHUB_TOKEN not set -- git credentials not configured"
+fi
+
 # -- 6. Workspaces: deps, env files, dev servers ------------------------------
 write_api_env() {
   cat > "$DEVSTACK_ROOT/api/.env" <<EOF
@@ -91,13 +112,34 @@ VITE_API_BASE=$VITE_API_BASE
 EOF
 }
 
+# Registry pre-check FIRST: it distinguishes an egress problem (policy, proxy,
+# DNS) from an npm problem. registry.npmjs.org IS in the kit allow-list, so a
+# curl failure here means the sandbox outbound path, not npm itself.
+if ! curl -fsS -m 15 https://registry.npmjs.org/express/latest \
+       > "$LOGDIR/npm-registry-check.json" 2>&1; then
+  fail "registry.npmjs.org unreachable from the sandbox (curl).
+    The kit allow-list includes it, so this is an egress problem: check
+    'sbx policy ls', the TUI network panel, and DNS inside the sandbox
+    (getent hosts registry.npmjs.org). Log: workspaces/logs/npm-registry-check.json"
+fi
+ok "registry.npmjs.org reachable"
+
 for _app in api web; do
-  if [ ! -d "$DEVSTACK_ROOT/$_app/node_modules" ]; then
-    step "installing $_app dependencies (first run)..."
-    (cd "$DEVSTACK_ROOT/$_app" && npm install --no-audit --no-fund) \
-      > "$LOGDIR/npm-$_app.log" 2>&1 \
-      || fail "npm install failed for $_app -- see workspaces/logs/npm-$_app.log"
+  if [ -d "$DEVSTACK_ROOT/$_app/node_modules" ]; then
+    step "checking $_app dependencies (npm install is idempotent)..."
+  else
+    step "installing $_app dependencies..."
   fi
+  # ALWAYS run npm install: a previous FAILED install can leave a partial
+  # node_modules behind, and npm install is a no-op when the tree is complete.
+  (cd "$DEVSTACK_ROOT/$_app" && \
+     npm install --no-audit --no-fund --fetch-retries=5) \
+    > "$LOGDIR/npm-$_app.log" 2>&1 || {
+    echo "[$TAG] FAIL: npm install failed for $_app -- workspaces/logs/npm-$_app.log, last lines:" >&2
+    tail -n 30 "$LOGDIR/npm-$_app.log" >&2 || true
+    exit 1
+  }
+  ok "$_app dependencies ready"
 done
 
 write_api_env
@@ -108,6 +150,11 @@ pkill -f "tsx watch src/index.ts" >/dev/null 2>&1 || true
 ( cd "$DEVSTACK_ROOT/api" && nohup npm run dev > "$LOGDIR/api.log" 2>&1 & )
 pkill -f "vite" >/dev/null 2>&1 || true
 ( cd "$DEVSTACK_ROOT/web" && nohup npm run dev > "$LOGDIR/web.log" 2>&1 & )
+
+# Existing containers may still be attached to an older net name (project
+# renamed); connect them to the current one (no-op when already attached).
+docker network connect "$SBX_NET_NAME" pg-dev >/dev/null 2>&1 || true
+docker network connect "$SBX_NET_NAME" adminer-dev >/dev/null 2>&1 || true
 
 # -- 7. Health checks ---------------------------------------------------------
 pg_status() {
@@ -132,11 +179,12 @@ done
 
 # -- 8. Summary ---------------------------------------------------------------
 printf '\n'
-printf '\033[1mdevstack components (inside the sandbox)\033[0m\n'
+printf '\033[1m%s components (inside the sandbox)\033[0m\n' "$TAG"
 printf '  postgres  : %-8s pg-dev           127.0.0.1:%s  (db: %s)\n' "$(pg_status)"     "$PG_PORT"     "$POSTGRES_DB"
 printf '  admin     : %-8s adminer-dev     127.0.0.1:%s  (server: %s)\n' "$(adminer_status)" "$ADMINER_PORT" "$POSTGRES_HOST"
 printf '  api       : %-8s express/tsx    127.0.0.1:%s  (log: logs/api.log)\n' "$(api_status)"     "$API_PORT"
 printf '  web       : %-8s vite/react     127.0.0.1:%s  (log: logs/web.log)\n' "$(web_status)"     "$WEB_PORT"
+printf '  node/npm  : %s / %s\n' "$(node -v)" "$(npm -v)"
 printf '  local ai  : %-8s %s  (model: %s)\n' "$AI_PROVIDER" "$_base_url" "$AI_OLLAMA_MODEL"
 printf '\n'
 printf 'agent tools: pi (/model -> ollama), herdr (ctrl+b q to detach), openspec\n'
@@ -147,4 +195,4 @@ if [ "$(api_status)" != "ready" ]; then
   tail -n 20 "$LOGDIR/api.log" >&2 || true
   exit 1
 fi
-ok "devstack is up -- API <-> Postgres round-trip verified via /api/health"
+ok "$TAG is up -- API <-> Postgres round-trip verified via /api/health"

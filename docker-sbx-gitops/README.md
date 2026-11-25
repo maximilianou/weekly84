@@ -50,7 +50,7 @@ HOST                                                     SANDBOX (devstack)
 | `workspaces/api`, `workspaces/web` | The two dev workspaces (mounted as the sandbox's primary workspace) |
 | `policy/README.md` | Network-rule rationale + `sbx policy` commands |
 | `setup.sh` | One-time **host** bootstrap (sbx install check, login, Ollama, policy) |
-| `sbx.sh` | Day-2 wrapper: check/plan/up/shell/exec/logs/ports/url/ai/db/down/rm |
+| `sbx.sh` | Day-2 wrapper: check/plan/up/shell/exec/logs/ports/url/ai/daemonlog/db/down/rm/new |
 
 ## Quickstart
 
@@ -64,9 +64,55 @@ cp etc.env.example etc.env       # adjust values (ports, model, credentials)
 ./sbx.sh shell                   # terminal in the sandbox -> run: herdr  /  pi
 ```
 
-First `up` builds the kit image (Node 22 + tools); later runs reuse it. The
+First `up` builds the kit image (Node 26 + tools); later runs reuse it. The
 bootstrap is idempotent -- re-run `./sbx.sh up` after host reboots or to apply
 new `etc.env` values.
+
+## Project name: one template, many weekly projects
+
+ONE name (`SBX_NAME` in etc.env, or `--name` per invocation) drives every
+per-project resource:
+
+| Resource | Value for name `weekly85` |
+|---|---|
+| Sandbox (`sbx ls`) | `weekly85` |
+| Postgres volume | `weekly85-pgdata` |
+| Internal docker network | `weekly85-net` |
+| Default GitHub repo | `<GITHUB_OWNER>/weekly85` |
+
+```bash
+./sbx.sh new weekly85                 # copy the template and name it
+cd ../../weekly85                     # or: ./sbx.sh new weekly85 ~/projects/weekly85
+# put the fine-grained GitHub token in etc.env (GITHUB_TOKEN), then:
+./setup.sh && ./sbx.sh up
+```
+
+`./sbx.sh up --name weekly86` overrides the name for that run on an existing
+checkout (`check`, `plan`, `up`, `rm`, `reset` accept `--name`). `PGDATA_VOLUME`
+and `SBX_NET_NAME` are derived from the name, not set by hand. The kit
+directory stays `kit/devstack`: it is shared tooling (Node, pi, herdr,
+openspec), not project state, and its image is built once and reused by every
+project.
+
+## GitHub fine-grained token (push exactly one repo)
+
+The sandbox authenticates with a **fine-grained PAT scoped to exactly one
+repository**, so the agent can push the project and nothing else:
+
+1. Open https://github.com/settings/personal-access-tokens/new
+2. Repository access: **Only select repositories** -> `<owner>/<project>`
+   (e.g. `maximilianou/weekly85`).
+3. Permissions: **Contents: Read and write** (plus **Pull requests: Read and
+   write** if the agent should open PRs); Metadata is granted automatically.
+4. Put `GITHUB_OWNER`, `GITHUB_TOKEN` (and optionally `GIT_USER_NAME` /
+   `GIT_USER_EMAIL`) in `etc.env` -- never commit them; etc.env is gitignored.
+
+`./setup.sh` verifies the token: it must reach the repo **with push
+permission** and must not be scoped to many other repos. Inside the sandbox,
+the bootstrap installs a git credential helper that reads `GITHUB_TOKEN` from
+the environment at push time (never written to a file there), sets the git
+identity, and marks the mounted workspace safe for git. `github.com` and
+`api.github.com` are already in the kit network allow-list.
 
 ## GitOps workflow
 
@@ -90,7 +136,8 @@ new `etc.env` values.
 | Postgres admin | `ADMINER_IMAGE`, `ADMINER_PORT`, `ADMINER_DEFAULT_SERVER` |
 | TS API | `API_PORT`, `NODE_ENV` |
 | React web | `WEB_PORT`, `VITE_API_BASE` |
-| Internal network | `SBX_NET_NAME` |
+| Internal network / volume | `SBX_NET_NAME`, `PGDATA_VOLUME` -- derived from the project name (`<name>-net`, `<name>-pgdata`) |
+| GitHub | `GITHUB_OWNER`, `GITHUB_REPO` (default: project name), `GITHUB_TOKEN`, `GIT_USER_NAME`, `GIT_USER_EMAIL` |
 
 Ports published to the host are declared in `sbxenv.yaml` (`ports:`,
 loopback by default) and must match `PG_PORT` / `API_PORT` / `WEB_PORT` /
@@ -104,7 +151,7 @@ authoritative at runtime.
 |---|---|
 | web -> api | Vite proxy `/api` -> `127.0.0.1:$API_PORT` (inside sandbox) |
 | api -> postgres | `DATABASE_URL` -> `127.0.0.1:$PG_PORT` (pg-dev loopback publish); verified by `GET /api/health` |
-| adminer -> postgres | devnet internal DNS `$POSTGRES_HOST:5432` |
+| adminer -> postgres | internal docker network DNS `$POSTGRES_HOST:5432` |
 | pi -> Ollama | `AI_OLLAMA_URL` (`host.docker.internal:11434`) via `~/.pi/agent/models.json`; switch with `AI_PROVIDER=model-runner` |
 | you -> everything | host ports from `sbxenv.yaml`; `./sbx.sh shell` / `exec` for the rest |
 
@@ -131,6 +178,26 @@ authoritative at runtime.
   is an ordinary Dockerfile`: the directive was ALSO written into the companion
   `devstack.dockerfile`. It belongs ONLY in the descriptor yaml - the recipe
   must be an ordinary Dockerfile. `./sbx.sh check` verifies both sides.
+- `failed to run sandbox container` (right after "image ready") is a generic
+  wrapper: the real cause is in the sbx daemon log
+  `~/.local/state/sandboxes/sandboxes/sandboxd/daemon.log`
+  (`./sbx.sh daemonlog`, or `sbx diagnose`). On Debian-family hosts the
+  recurring causes (see docker/sbx-releases issue 444) are, in order:
+  `/dev/loop-control` permissions (add yourself to the `disk` group next to
+  `kvm`, then re-login), `/usr/sbin` missing from PATH (the sbx daemon looks
+  up mkfs.erofs/losetup/mount there: `export PATH="$PATH:/usr/sbin"` then
+  `sbx daemon restart`), missing or old `erofs-utils` (needs `--tar`,
+  >= 1.8), and erofs kernel support (`sudo modprobe erofs`). `setup.sh`
+  verifies all four on Linux. An occupied host port fails the run the same
+  way -- `./sbx.sh check` now also tests that the four published ports are
+  free. The built kit image stays cached, so a retry after a fix does NOT
+  repeat the multi-minute build.
+- `npm install failed for api|web`: the bootstrap now prints the real npm
+  error to the terminal (last 30 lines of `workspaces/logs/npm-<app>.log`) and
+  runs a curl pre-check first that separates egress problems (policy, proxy,
+  DNS) from npm problems -- `registry.npmjs.org` IS in the kit allow-list, so
+  a pre-check failure means the sandbox outbound path. The committed
+  `package.json` files resolve cleanly (verified with a real `npm install`).
 - `./sbx.sh ai` diagnoses the host <-> sandbox AI path in both directions;
   `./sbx.sh logs api|web|pg|adminer` tails the in-sandbox services.
 

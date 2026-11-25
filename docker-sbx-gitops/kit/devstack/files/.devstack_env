@@ -15,8 +15,9 @@ export PATH="$PATH:/usr/local/bin:/home/agent/.local/bin:/home/agent/bootstrap"
 : "${AI_OLLAMA_URL:=http://host.docker.internal:11434}"; export AI_OLLAMA_URL
 : "${AI_OLLAMA_MODEL:=qwen2.5-coder:7b}"; export AI_OLLAMA_MODEL
 : "${AI_MODEL_RUNNER_URL:=http://model-runner.docker.internal/engines/v1}"; export AI_MODEL_RUNNER_URL
-: "${SBX_NET_NAME:=devnet}"; export SBX_NET_NAME
-: "${PGDATA_VOLUME:=devstack-pgdata}"; export PGDATA_VOLUME
+: "${SBX_NAME:=devstack}"; export SBX_NAME
+: "${SBX_NET_NAME:=${SBX_NAME}-net}"; export SBX_NET_NAME
+: "${PGDATA_VOLUME:=${SBX_NAME}-pgdata}"; export PGDATA_VOLUME
 : "${POSTGRES_IMAGE:=postgres:16-alpine}"; export POSTGRES_IMAGE
 : "${POSTGRES_USER:=dev}"; export POSTGRES_USER
 : "${POSTGRES_PASSWORD:=dev-password-change-me}"; export POSTGRES_PASSWORD
@@ -30,6 +31,11 @@ export PATH="$PATH:/usr/local/bin:/home/agent/.local/bin:/home/agent/bootstrap"
 : "${WEB_PORT:=5173}"; export WEB_PORT
 : "${VITE_API_BASE:=/api}"; export VITE_API_BASE
 : "${NODE_ENV:=development}"; export NODE_ENV
+: "${GITHUB_OWNER:=}"; export GITHUB_OWNER
+: "${GITHUB_REPO:=${SBX_NAME}}"; export GITHUB_REPO
+: "${GITHUB_TOKEN:=}"; export GITHUB_TOKEN
+: "${GIT_USER_NAME:=agent}"; export GIT_USER_NAME
+: "${GIT_USER_EMAIL:=agent@localhost}"; export GIT_USER_EMAIL
 
 # Composed connection strings (DATABASE_URL can override via etc.env).
 if [ -z "${DATABASE_URL:-}" ]; then

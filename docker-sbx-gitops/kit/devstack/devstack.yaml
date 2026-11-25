@@ -59,9 +59,12 @@ capabilities:
     config:
       filename: AGENTS.md
       content: |
-        You run inside the `devstack` Docker Sandbox as user `agent`.
+        You run inside this project's Docker Sandbox as user `agent` (the
+        sandbox name follows the project, e.g. devstack or weekly85).
         Primary workspace: /home/agent/workspaces (api = TypeScript API on
-        :4000, web = React/Vite on :5173). Services: pg-dev (Postgres, devnet),
-        adminer-dev (Adminer, :8081). Host Ollama is reachable at the URL in
-        $AI_OLLAMA_URL (pi reads ~/.pi/agent/models.json). Read
-        /home/agent/AGENTS.md before making changes.
+        :4000, web = React/Vite on :5173). Services: pg-dev (Postgres, on the
+        sandbox-internal network), adminer-dev (Adminer, :8081). Host Ollama
+        is reachable at the URL in $AI_OLLAMA_URL (pi reads
+        ~/.pi/agent/models.json). Read /home/agent/AGENTS.md before making
+        changes. When GITHUB_TOKEN is configured, git pushes go ONLY to
+        $GITHUB_OWNER/$GITHUB_REPO.

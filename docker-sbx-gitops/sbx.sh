@@ -15,6 +15,7 @@
 #   ./sbx.sh db       psql shell inside the sandbox
 #   ./sbx.sh down     stop the sandbox (keep state)
 #   ./sbx.sh rm       remove the sandbox (destroys containers; volume persists)
+#   ./sbx.sh new NAME [dir]   copy the template into a new project named NAME
 #
 # All values come from etc.env; the declarative definition is sbxenv.yaml,
 # kept at the repo root (sbx resolves its relative paths from its own dir).
@@ -32,6 +33,27 @@ fi
 # shellcheck disable=SC1091
 . "$ROOT/etc.env"
 
+# -- One-name override: ./sbx.sh <command> --name weekly85 ---------------------
+# Weekly projects: ONE name drives sandbox name, postgres volume, internal
+# network and the default GitHub repo. See README "Project name".
+SBX_NAME_CLI=""
+_args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name)   SBX_NAME_CLI="${2:-}"; shift 2 ;;
+    --name=*) SBX_NAME_CLI="${1#--name=}"; shift ;;
+    *)        _args+=("$1"); shift ;;
+  esac
+done
+set -- ${_args[@]+"${_args[@]}"}
+[ -n "$SBX_NAME_CLI" ] && SBX_NAME="$SBX_NAME_CLI"
+
+# Derived per-project resource names (one name to rule them all).
+PGDATA_VOLUME="$SBX_NAME-pgdata"
+SBX_NET_NAME="$SBX_NAME-net"
+GITHUB_REPO="${GITHUB_REPO:-$SBX_NAME}"
+export SBX_NAME PGDATA_VOLUME SBX_NET_NAME GITHUB_REPO
+
 require_sbx() {
   command -v sbx >/dev/null 2>&1 || {
     echo "ERROR: 'sbx' not found. Install Docker Sandboxes first -- see ./setup.sh" >&2
@@ -46,11 +68,13 @@ ENV_FILE="$ROOT/$SBX_ENV_FILE"
 # The sandbox sources this file on every shell, so it is authoritative at
 # runtime; the env: block of sbxenv.yaml is only a fallback.
 PERSIST_KEYS=(
+  SBX_NAME
   AI_PROVIDER AI_OLLAMA_URL AI_OLLAMA_MODEL AI_MODEL_RUNNER_URL
   SBX_NET_NAME PGDATA_VOLUME
   POSTGRES_IMAGE POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST PG_PORT
   ADMINER_IMAGE ADMINER_PORT ADMINER_DEFAULT_SERVER
   API_PORT WEB_PORT VITE_API_BASE NODE_ENV
+  GITHUB_OWNER GITHUB_REPO GITHUB_TOKEN GIT_USER_NAME GIT_USER_EMAIL
 )
 persist_env_payload() {
   for _k in "${PERSIST_KEYS[@]}"; do
@@ -145,13 +169,36 @@ do_check() {
   if grep -qE "^name:[[:space:]]*$SBX_NAME[[:space:]]*$" "$ENV_FILE"; then
     echo "- name      : '$SBX_NAME' matches sbxenv.yaml"
   else
-    echo "  [FAIL] sbxenv.yaml 'name:' differs from SBX_NAME=$SBX_NAME"; fail=1
+    echo "  [warn] sbxenv.yaml 'name:' differs from SBX_NAME=$SBX_NAME"
+    echo "         --name overrides it at plan/create time; edit sbxenv.yaml"
+    echo "         'name:' to make the new name the committed default"
   fi
-  local p
+  # Host ports must be FREE: sbx publishes them when the sandbox container
+  # starts; an occupied port fails the run AFTER the (slow) kit build.
+  local p listen addr busy
+  if command -v ss >/dev/null 2>&1; then
+    listen="$(ss -ltnH 2>/dev/null | awk '{print $4}')"
+  elif command -v lsof >/dev/null 2>&1; then
+    listen="$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $9}')"
+  else
+    listen=""
+    echo "- ports     : (neither ss nor lsof found -- skipped the free-port check)"
+  fi
   for p in "$PG_PORT" "$API_PORT" "$WEB_PORT" "$ADMINER_PORT"; do
     if grep -qE "^[[:space:]]*-[[:space:]]*sandbox:[[:space:]]*$p[[:space:]]*$" "$ENV_FILE" \
        && grep -qE "^[[:space:]]*host:[[:space:]]*$p[[:space:]]*$" "$ENV_FILE"; then
-      echo "- port      : $p declared (sandbox -> host)"
+      busy=0
+      for addr in $listen; do
+        case "${addr##*:}" in "$p") busy=1 ;; esac
+      done
+      if [ "$busy" = 1 ]; then
+        echo "  [FAIL] host port $p is ALREADY IN USE -- sbx publishes it on the"
+        echo "         host, and the run would fail after the kit build; free the"
+        echo "         port or change the host side in etc.env + sbxenv.yaml"
+        fail=1
+      else
+        echo "- port      : $p declared (sandbox -> host) and free on the host"
+      fi
     else
       echo "  [FAIL] port $p not declared for BOTH sandbox and host in sbxenv.yaml"; fail=1
     fi
@@ -181,13 +228,16 @@ cmd_up() {
   else
     echo "- creating sandbox from $ENV_FILE (first run builds the kit image)..."
     if ! sbx env create "$ENV_FILE" --name "$SBX_NAME"; then
-      echo "[FAIL] sbx env create failed - the two most common causes:" >&2
+      echo "[FAIL] sbx env create failed - the three most common causes:" >&2
       echo "  1. kit recipe error -> <name>.yaml must START with" >&2
       echo "     '# syntax=docker/sandbox-kit:3' AND <name>.dockerfile must be an" >&2
       echo "     ordinary Dockerfile with NO '# syntax=' line ('./sbx.sh check'" >&2
       echo "     verifies both);" >&2
       echo "  2. path resolution -> sbx resolves relative paths in sbxenv.yaml" >&2
-      echo "     from the env file's OWN directory ('./sbx.sh check' prints them)." >&2
+      echo "     from the env file's OWN directory ('./sbx.sh check' prints them);" >&2
+      echo "  3. 'failed to run sandbox container' after 'image ready' -> the real" >&2
+      echo "     cause is in the sbx daemon log: ./sbx.sh daemonlog (loop devices," >&2
+      echo "     erofs, PATH -- re-run ./setup.sh; it verifies all of them)." >&2
       exit 1
     fi
   fi
@@ -241,7 +291,7 @@ cmd_logs() {
 
 cmd_url() {
   cat <<EOF
-devstack URLs (host side -- published by sbxenv.yaml ports:)
+$SBX_NAME URLs (host side -- published by sbxenv.yaml ports:)
   web      : http://localhost:$WEB_PORT
   api      : http://localhost:$API_PORT/api/health
   adminer  : http://localhost:$ADMINER_PORT  (server: $POSTGRES_HOST, user: $POSTGRES_USER)
@@ -277,11 +327,53 @@ cmd_down() {
   sbx stop "$SBX_NAME"
 }
 
+cmd_daemonlog() {
+  local log="$HOME/.local/state/sandboxes/sandboxes/sandboxd/daemon.log"
+  if [ -f "$log" ]; then
+    echo "- sbx daemon log: $log"
+    echo "  (the real error behind 'failed to run sandbox container' is here)"
+    echo
+    grep -iE 'error|warn' "$log" | tail -n 30 || tail -n 30 "$log"
+  else
+    echo "no daemon log at $log" >&2
+    echo "try: sbx diagnose" >&2
+  fi
+}
+
 cmd_rm() {
   require_sbx
-  sbx env rm "$ENV_FILE" --name "$SBX_NAME" "$@"
-  echo "note: the Postgres volume '$PGDATA_VOLUME' survives -- wipe it with:"
-  echo "  ./sbx.sh up && ./sbx.sh exec docker volume rm $PGDATA_VOLUME"
+  if sbx env rm "$ENV_FILE" --name "$SBX_NAME" "$@"; then
+    echo "note: the Postgres volume '$PGDATA_VOLUME' survives -- wipe it with:"
+    echo "  ./sbx.sh up && ./sbx.sh exec docker volume rm $PGDATA_VOLUME"
+  else
+    echo "(sbx reports nothing to remove for '$SBX_NAME' -- a failed create"
+    echo " usually cleans up after itself; the built kit image stays cached)"
+  fi
+}
+
+cmd_new() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    echo "usage: ./sbx.sh new <project-name> [target-dir]  # e.g. ./sbx.sh new weekly85" >&2
+    exit 2
+  fi
+  local target="${2:-$ROOT/../../$name}"
+  if [ -e "$target" ]; then
+    echo "[FAIL] target already exists: $target" >&2
+    exit 1
+  fi
+  mkdir -p "$target"
+  # Copy the committed template WITHOUT local state (deps, logs, git, env).
+  tar -C "$ROOT" --exclude='.git' --exclude='node_modules' --exclude='dist' \
+      --exclude='etc.env' --exclude='*.log' --exclude='.env' \
+      --exclude='env' -cf - . | tar -C "$target" -xf -
+  sed "s/^SBX_NAME=.*/SBX_NAME=$name/" "$ROOT/etc.env.example" > "$target/etc.env"
+  echo "- new project: $target"
+  echo "  sandbox '$name' | volume '$name-pgdata' | net '$name-net' | default GitHub repo '$name'"
+  echo "next:"
+  echo "  cd $target"
+  echo "  # put the fine-grained GitHub token scoped to the '$name' repo into etc.env"
+  echo "  ./setup.sh && ./sbx.sh up"
 }
 
 cmd_reset() {
@@ -302,9 +394,11 @@ usage() {
   ./sbx.sh logs X   follow logs: api | web | pg | adminer
   ./sbx.sh url      print the host-side URLs
   ./sbx.sh ai       verify host Ollama reachability (host + from sandbox)
+  ./sbx.sh daemonlog  tail the sbx daemon log (real cause of run failures)
   ./sbx.sh db       psql shell inside the sandbox
   ./sbx.sh down     stop the sandbox (keep state)
   ./sbx.sh rm       remove the sandbox (destroys containers; volume persists)
+  ./sbx.sh new NAME [dir]   copy the template into a new project named NAME
 EOF
 }
 
@@ -319,9 +413,11 @@ case "${1:-help}" in
   logs)   shift; cmd_logs "$@" ;;
   url)    shift; cmd_url ;;
   ai)     shift; cmd_ai ;;
+  daemonlog) shift; cmd_daemonlog ;;
   db)     shift; cmd_db ;;
   down)   shift; cmd_down ;;
   rm)     shift; cmd_rm "$@" ;;
+  new)    shift; cmd_new "$@" ;;
   reset)  shift; cmd_reset ;;
   help|-h|--help) usage ;;
   *) echo "unknown command: $1" >&2; usage; exit 2 ;;
