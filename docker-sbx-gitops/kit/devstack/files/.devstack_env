@@ -1,0 +1,40 @@
+# =============================================================================
+# /home/agent/.devstack_env — sourced by EVERY bash inside the sandbox
+# (non-interactive via BASH_ENV, interactive via the ~/.bashrc hook).
+# =============================================================================
+
+export DEVSTACK_ROOT="/home/agent/workspaces"
+export PATH="$PATH:/usr/local/bin:/home/agent/.local/bin:/home/agent/bootstrap"
+
+# Runtime values synced by `./sbx.sh up` from the host's etc.env.
+[ -f /etc/sandbox-persistent.sh ] && . /etc/sandbox-persistent.sh
+
+# Fallbacks — must match etc.env / sbxenv.yaml. Any variable already
+# present in the environment wins.
+: "${AI_PROVIDER:=ollama}"; export AI_PROVIDER
+: "${AI_OLLAMA_URL:=http://host.docker.internal:11434}"; export AI_OLLAMA_URL
+: "${AI_OLLAMA_MODEL:=qwen2.5-coder:7b}"; export AI_OLLAMA_MODEL
+: "${AI_MODEL_RUNNER_URL:=http://model-runner.docker.internal/engines/v1}"; export AI_MODEL_RUNNER_URL
+: "${SBX_NET_NAME:=devnet}"; export SBX_NET_NAME
+: "${PGDATA_VOLUME:=devstack-pgdata}"; export PGDATA_VOLUME
+: "${POSTGRES_IMAGE:=postgres:16-alpine}"; export POSTGRES_IMAGE
+: "${POSTGRES_USER:=dev}"; export POSTGRES_USER
+: "${POSTGRES_PASSWORD:=dev-password-change-me}"; export POSTGRES_PASSWORD
+: "${POSTGRES_DB:=appdb}"; export POSTGRES_DB
+: "${POSTGRES_HOST:=pg-dev}"; export POSTGRES_HOST
+: "${PG_PORT:=5432}"; export PG_PORT
+: "${ADMINER_IMAGE:=adminer:4}"; export ADMINER_IMAGE
+: "${ADMINER_PORT:=8081}"; export ADMINER_PORT
+: "${ADMINER_DEFAULT_SERVER:=pg-dev}"; export ADMINER_DEFAULT_SERVER
+: "${API_PORT:=4000}"; export API_PORT
+: "${WEB_PORT:=5173}"; export WEB_PORT
+: "${VITE_API_BASE:=/api}"; export VITE_API_BASE
+: "${NODE_ENV:=development}"; export NODE_ENV
+
+# Composed connection strings (DATABASE_URL can override via etc.env).
+if [ -z "${DATABASE_URL:-}" ]; then
+  export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${PG_PORT}/${POSTGRES_DB}"
+  export DATABASE_URL_INTERNAL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}"
+fi
+export DATABASE_URL
+export DATABASE_URL_INTERNAL

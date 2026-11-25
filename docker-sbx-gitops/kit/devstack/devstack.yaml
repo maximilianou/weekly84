@@ -1,0 +1,60 @@
+# =============================================================================
+# kit/devstack/devstack.yaml — kit workload descriptor
+#
+# Pairs with devstack.dockerfile (same basename, same directory).
+# Docs: https://docs.docker.com/ai/sandboxes/customize
+#       https://docs.docker.com/ai/sandboxes/customize/author/base-images
+#
+# Referenced from sbxenv.yaml (repo root) as a local kit:
+#   kits:
+#     - ./kit/devstack
+# =============================================================================
+
+schemaVersion: "3"
+kind: workload
+
+capabilities:
+  # Declares this image as an sbx agent workload.
+  - type: com.docker.sandbox/sbx@1
+
+  # Outbound network allow-list applied while the sandbox runs (TCP only,
+  # evaluated by the host-side proxy — UDP/ICMP stay blocked).
+  # Presets: allow-all | balanced | deny-all   (see `sbx policy ls`)
+  # host.docker.internal resolves to the HOST loopback services → Ollama.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          # Node/npm toolchain (npm install, engines, dist-tags)
+          - registry.npmjs.org
+          - deb.nodesource.com
+          # pi.dev coding agent (packages + docs)
+          - pi.dev
+          - docs.pi.dev
+          # herdr terminal multiplexer (installer + releases)
+          - herdr.dev
+          # openspec / GitHub-based installs and git operations
+          - github.com
+          - api.github.com
+          - objects.githubusercontent.com
+          - raw.githubusercontent.com
+          # docker pulls FROM INSIDE the sandbox (postgres, adminer, …)
+          - registry-1.docker.io
+          - auth.docker.io
+          - production.cloudflare.docker.com
+          # local AI endpoints on the host
+          - host.docker.internal
+          - model-runner.docker.internal
+
+  # Agent context injected for the sandbox's coding agent. The full guide is
+  # also shipped as /home/agent/AGENTS.md (files/AGENTS.md) for interactive use.
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      filename: AGENTS.md
+      content: |
+        You run inside the `devstack` Docker Sandbox as user `agent`.
+        Primary workspace: /home/agent/workspaces (api = TypeScript API on
+        :4000, web = React/Vite on :5173). Services: pg-dev (Postgres, devnet),
+        adminer-dev (Adminer, :8081). Host Ollama is reachable at the URL in
+        $AI_OLLAMA_URL (pi reads ~/.pi/agent/models.json). Read
+        /home/agent/AGENTS.md before making changes.

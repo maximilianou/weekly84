@@ -1,0 +1,13 @@
+{
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "providers": {
+    "ollama": {
+      "baseUrl": "__AI_BASE_URL__",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "models": [
+        { "id": "__AI_MODEL__" }
+      ]
+    }
+  }
+}
