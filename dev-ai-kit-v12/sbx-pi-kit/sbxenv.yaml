@@ -1,0 +1,33 @@
+# File: sbxenv.yaml
+# Official sbx environment configuration for the Pi + Ollama + OpenSpec + Herdr devstack.
+
+kit: docker.io/sbx/pi-kit:latest
+
+env:
+  OLLAMA_HOST: "http://192.168.122.1:11434"
+  OPENAI_BASE_URL: "http://192.168.122.1:11434/v1"
+  OPENAI_API_KEY: "ollama"
+  OLLAMA_MODEL: "inkling-2-mini"
+  TERM: "xterm-256color"
+
+permissions:
+  network:
+    allow:
+      - "192.168.122.1:11434"
+      - "github.com"
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "herdr.dev"
+      - "releases.herdr.dev"
+      - "hub.docker.com"
+      - "registry-1.docker.io"
+      - "auth.docker.io"
+      - "deb.debian.org"
+      - "security.debian.org"
+      - "archive.ubuntu.com"
+
+files:
+  - source: "files/home/.pi/agent/models.json"
+    dest: "/home/agent/.pi/agent/models.json"
+  - source: "files/home/.pi/agent/skills"
+    dest: "/home/agent/.pi/agent/skills"
